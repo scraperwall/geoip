@@ -1,13 +1,13 @@
 package geoip
 
 import (
-	"errors"
 	"fmt"
 	"net"
 
 	gg "github.com/oschwald/geoip2-golang"
 )
 
+// Anonymous contains information about whether an IP address is anonymous
 type Anonymous struct {
 	// from geoip2-golang.AnonymousIP
 	IsAnonymous       bool `json:"is_anonymous"`
@@ -17,6 +17,7 @@ type Anonymous struct {
 	IsTorExitNode     bool `json:"is_tor_exit_node"`
 }
 
+// City contains geographic data on a city level for a given IP address
 type City struct {
 	Name                   string   `json:"name"`
 	Continent              string   `json:"continent"`
@@ -39,10 +40,12 @@ type City struct {
 	IsSatelliteProvider    bool     `json:"is_satellite_provider"`
 }
 
+// ConnectionType denotes the connection type for a given IP address
 type ConnectionType struct {
 	Type string `json:"connection_type"`
 }
 
+// Country contains geographic data on a country level for a given IP address
 type Country struct {
 	ContinentCode          string `json:"continent_code"`
 	Continent              string `json:"continent"`
@@ -57,10 +60,12 @@ type Country struct {
 	IsSatelliteProvider    bool   `json:"is_satellite_provider"`
 }
 
+// Domain denotes the domain for a given IP address
 type Domain struct {
 	Domain string `json:"domain"`
 }
 
+// ISP contains information about the autonomous system for the given IP address
 type ISP struct {
 	AutonomousSystemNumber       uint   `json:"autonomous_system_number"`
 	AutonomousSystemOrganization string `json:"autonomous_system_organization"`
@@ -68,22 +73,23 @@ type ISP struct {
 	Organization                 string `json:"organization"`
 }
 
+// GeoIP contains metadata for an IP address from the Maxmind GeoIP databases
 type GeoIP struct {
-	db        *gg.Reader `json:"-"`
-	IP        net.IP     `json:"ip"`
-	Anonymous *Anonymous `json:"anonymous"`
-	City      *City      `json:"city"`
-	Country   *Country   `json:"country"`
-	Domain    *Domain    `json:"domain"`
-	ISP       *ISP       `json:"isp"`
+	db        *gg.Reader
+	IP        net.IP    `json:"ip" bson:"ip"`
+	Anonymous Anonymous `json:"anonymous" bson:"anon"`
+	City      City      `json:"city" bson:"city"`
+	Country   Country   `json:"country" bson:"country"`
+	Domain    Domain    `json:"domain" bson:"domain"`
+	ISP       ISP       `json:"isp" bson:"isp"`
 }
 
+// NewGeoIP creates a new GeoIP data structure
 func NewGeoIP(dbpath string) (*GeoIP, error) {
 	ggReader, err := gg.Open(dbpath)
 	if err != nil {
 		return nil, err
 	}
-
 	g := GeoIP{
 		db: ggReader,
 	}
@@ -91,105 +97,107 @@ func NewGeoIP(dbpath string) (*GeoIP, error) {
 	return &g, nil
 }
 
+// Close closes the GeoIP database
 func (g *GeoIP) Close() {
 	g.db.Close()
 }
 
+// Lookup performs a geo ip lookup for ipAddr in the maxmind geoip database
 func (g *GeoIP) Lookup(ipAddr string) error {
 	g.IP = net.ParseIP(ipAddr)
 	if g.IP == nil {
-		return errors.New(fmt.Sprintf("%s is not a valid IP address!", ipAddr))
+		return fmt.Errorf("%s is not a valid IP address!", ipAddr)
 	}
 
 	// ANONYMOUS IP
 	//
 	anon, err := g.db.AnonymousIP(g.IP)
 	if err == nil {
-		g.Anonymous = &Anonymous{}
-		g.Anonymous.IsAnonymous = anon.IsAnonymous
-		g.Anonymous.IsAnonymousVPN = anon.IsAnonymousVPN
-		g.Anonymous.IsHostingProvider = anon.IsHostingProvider
-		g.Anonymous.IsPublicProxy = anon.IsPublicProxy
-		g.Anonymous.IsTorExitNode = anon.IsTorExitNode
-	} else {
-		g.Anonymous = nil
+		g.Anonymous = Anonymous{
+			IsAnonymous:       anon.IsAnonymous,
+			IsAnonymousVPN:    anon.IsAnonymousVPN,
+			IsHostingProvider: anon.IsHostingProvider,
+			IsPublicProxy:     anon.IsPublicProxy,
+			IsTorExitNode:     anon.IsTorExitNode,
+		}
 	}
 
 	// CITY
 	//
 	city, err := g.db.City(g.IP)
 	if err == nil {
-		g.City = &City{}
-		g.City.AccuracyRadius = city.Location.AccuracyRadius
-		g.City.Continent = city.Continent.Names["en"]
-		g.City.ContinentCode = city.Continent.Code
-		g.City.Country = city.Country.Names["en"]
-		g.City.CountryCode = city.Country.IsoCode
-		g.City.IsAnonymousProxy = city.Traits.IsAnonymousProxy
-		g.City.IsSatelliteProvider = city.Traits.IsSatelliteProvider
-		g.City.Latitude = city.Location.Latitude
-		g.City.Longitude = city.Location.Longitude
-		g.City.MetroCode = city.Location.MetroCode
-		g.City.Name = city.City.Names["en"]
-		g.City.Postcode = city.Postal.Code
-		g.City.RegisteredCountry = city.RegisteredCountry.Names["en"]
-		g.City.RegisteredCountryCode = city.RegisteredCountry.IsoCode
-		g.City.RepresentedCountry = city.RepresentedCountry.Names["en"]
-		g.City.RepresentedCountryCode = city.RepresentedCountry.IsoCode
-		g.City.RepresentedCountryType = city.RepresentedCountry.Type
-
 		subdivisions := make([]string, len(city.Subdivisions), len(city.Subdivisions))
 		for i, sd := range city.Subdivisions {
 			subdivisions[i] = sd.Names["en"]
 		}
-		g.City.Subdivisions = subdivisions
-		g.City.Timezone = city.Location.TimeZone
-	} else {
-		g.City = nil
+
+		g.City = City{
+			AccuracyRadius:         city.Location.AccuracyRadius,
+			Continent:              city.Continent.Names["en"],
+			ContinentCode:          city.Continent.Code,
+			Country:                city.Country.Names["en"],
+			CountryCode:            city.Country.IsoCode,
+			IsAnonymousProxy:       city.Traits.IsAnonymousProxy,
+			IsSatelliteProvider:    city.Traits.IsSatelliteProvider,
+			Latitude:               city.Location.Latitude,
+			Longitude:              city.Location.Longitude,
+			MetroCode:              city.Location.MetroCode,
+			Name:                   city.City.Names["en"],
+			Postcode:               city.Postal.Code,
+			RegisteredCountry:      city.RegisteredCountry.Names["en"],
+			RegisteredCountryCode:  city.RegisteredCountry.IsoCode,
+			RepresentedCountry:     city.RepresentedCountry.Names["en"],
+			RepresentedCountryCode: city.RepresentedCountry.IsoCode,
+			RepresentedCountryType: city.RepresentedCountry.Type,
+			Subdivisions:           subdivisions,
+			Timezone:               city.Location.TimeZone,
+		}
 	}
 
 	// COUNTRY
 	//
 	country, err := g.db.Country(g.IP)
 	if err == nil {
-		g.Country = &Country{}
-		g.Country.Continent = country.Continent.Names["en"]
-		g.Country.ContinentCode = country.Continent.Code
-		g.Country.Country = country.Country.Names["en"]
-		g.Country.CountryCode = country.Country.IsoCode
-		g.Country.IsAnonymousProxy = country.Traits.IsAnonymousProxy
-		g.Country.IsSatelliteProvider = country.Traits.IsSatelliteProvider
-		g.Country.RegisteredCountry = country.RegisteredCountry.Names["en"]
-		g.Country.RegisteredCountryCode = country.RegisteredCountry.IsoCode
-		g.Country.RepresentedCountry = country.RepresentedCountry.Names["en"]
-		g.Country.RepresentedCountryCode = country.RepresentedCountry.IsoCode
-		g.Country.RepresentedCountryType = country.RepresentedCountry.Type
-	} else {
-		g.Country = nil
+		g.Country = Country{
+			Continent:              country.Continent.Names["en"],
+			ContinentCode:          country.Continent.Code,
+			Country:                country.Country.Names["en"],
+			CountryCode:            country.Country.IsoCode,
+			IsAnonymousProxy:       country.Traits.IsAnonymousProxy,
+			IsSatelliteProvider:    country.Traits.IsSatelliteProvider,
+			RegisteredCountry:      country.RegisteredCountry.Names["en"],
+			RegisteredCountryCode:  country.RegisteredCountry.IsoCode,
+			RepresentedCountry:     country.RepresentedCountry.Names["en"],
+			RepresentedCountryCode: country.RepresentedCountry.IsoCode,
+			RepresentedCountryType: country.RepresentedCountry.Type,
+		}
 	}
 
-	// DOMAIN
-	//
-	domain, err := g.db.Domain(g.IP)
-	if err == nil {
-		g.Domain = &Domain{}
-		g.Domain.Domain = domain.Domain
-	} else {
-		g.Domain = nil
-	}
+	/*
+		// DOMAIN
+		//
+		domain, err := g.db.Domain(g.IP)
+		if err == nil {
+			g.Domain = &Domain{
+				Domain: domain.Domain,
+			}
+		} else {
+			g.Domain = nil
+		}
 
-	// ISP
-	//
-	isp, err := g.db.ISP(g.IP)
-	if err == nil {
-		g.ISP = &ISP{}
-		g.ISP.AutonomousSystemNumber = isp.AutonomousSystemNumber
-		g.ISP.AutonomousSystemOrganization = isp.AutonomousSystemOrganization
-		g.ISP.ISP = isp.ISP
-		g.ISP.Organization = isp.Organization
-	} else {
-		g.ISP = nil
-	}
-
+		// ISP
+		//
+		isp, err := g.db.ISP(g.IP)
+		if err == nil {
+			g.ISP = &ISP{
+				AutonomousSystemNumber:       isp.AutonomousSystemNumber,
+				AutonomousSystemOrganization: isp.AutonomousSystemOrganization,
+				ISP:          isp.ISP,
+				Organization: isp.Organization,
+			}
+		} else {
+			g.ISP = nil
+		}
+	*/
 	return nil
 }
