@@ -181,13 +181,12 @@ func (g *GeoIP) Load() error {
 				return err
 			}
 
-			num, err := io.Copy(tmpF, tarReader)
+			_, err = io.Copy(tmpF, tarReader)
 			if err != nil {
 				return err
 			}
 
 			tmpF.Close()
-			fmt.Printf("output [%d]: %s\n", num, tmpF.Name())
 
 			defer os.Remove(tmpF.Name())
 
