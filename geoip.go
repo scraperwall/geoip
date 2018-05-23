@@ -99,12 +99,14 @@ type GeoIP struct {
 	Domain    Domain    `json:"domain" bson:"domain"`
 	ISP       ISP       `json:"isp" bson:"isp"`
 	mutex     sync.RWMutex
+	ipMutex   sync.RWMutex
 }
 
 // NewGeoIP creates a new GeoIP data structure
 func NewGeoIP() (*GeoIP, error) {
 	g := GeoIP{
-		mutex: sync.RWMutex{},
+		mutex:   sync.RWMutex{},
+		ipMutex: sync.RWMutex{},
 	}
 
 	err := g.Load()
@@ -113,6 +115,14 @@ func NewGeoIP() (*GeoIP, error) {
 	}
 
 	return &g, nil
+}
+
+// NewGeoIPNoLoad creates a new geoip type without loading the data
+func NewGeoIPNoLoad() (*GeoIP, error) {
+	return &GeoIP{
+		mutex:   sync.RWMutex{},
+		ipMutex: sync.RWMutex{},
+	}, nil
 }
 
 // Load loads the GeoIP City Database from Maxmind
@@ -215,11 +225,96 @@ func (g *GeoIP) Close() {
 	g.db.Close()
 }
 
+// LookupIP looks up the geo ip data for the given IP address
+func (g *GeoIP) LookupIP(ip string) (*GeoIP, error) {
+	g.mutex.Lock()
+	defer g.mutex.Unlock()
+
+	x, err := NewGeoIPNoLoad()
+	if err != nil {
+		return nil, fmt.Errorf("failed to create new GeoIP type: %s", err)
+	}
+	x.IP = net.ParseIP(ip)
+
+	if x.IP == nil {
+		return nil, fmt.Errorf("%s is not a valid IP address", ip)
+	}
+
+	// ANONYMOUS IP
+	//
+	anon, err := g.db.AnonymousIP(x.IP)
+	if err == nil {
+		g.Anonymous = Anonymous{
+			IsAnonymous:       anon.IsAnonymous,
+			IsAnonymousVPN:    anon.IsAnonymousVPN,
+			IsHostingProvider: anon.IsHostingProvider,
+			IsPublicProxy:     anon.IsPublicProxy,
+			IsTorExitNode:     anon.IsTorExitNode,
+		}
+	}
+	// CITY
+	//
+	city, err := g.db.City(x.IP)
+	if err == nil {
+		subdivisions := make([]string, len(city.Subdivisions), len(city.Subdivisions))
+		for i, sd := range city.Subdivisions {
+			subdivisions[i] = sd.Names["en"]
+		}
+
+		x.City = City{
+			AccuracyRadius:         city.Location.AccuracyRadius,
+			Continent:              city.Continent.Names["en"],
+			ContinentCode:          city.Continent.Code,
+			Country:                city.Country.Names["en"],
+			CountryCode:            city.Country.IsoCode,
+			IsAnonymousProxy:       city.Traits.IsAnonymousProxy,
+			IsSatelliteProvider:    city.Traits.IsSatelliteProvider,
+			Latitude:               city.Location.Latitude,
+			Longitude:              city.Location.Longitude,
+			MetroCode:              city.Location.MetroCode,
+			Name:                   city.City.Names["en"],
+			Postcode:               city.Postal.Code,
+			RegisteredCountry:      city.RegisteredCountry.Names["en"],
+			RegisteredCountryCode:  city.RegisteredCountry.IsoCode,
+			RepresentedCountry:     city.RepresentedCountry.Names["en"],
+			RepresentedCountryCode: city.RepresentedCountry.IsoCode,
+			RepresentedCountryType: city.RepresentedCountry.Type,
+			Subdivisions:           subdivisions,
+			Timezone:               city.Location.TimeZone,
+		}
+	} else {
+		return nil, fmt.Errorf("failed to load city data for %s", ip)
+	}
+
+	// COUNTRY
+	//
+	country, err := g.db.Country(x.IP)
+	if err == nil {
+		x.Country = Country{
+			Continent:              country.Continent.Names["en"],
+			ContinentCode:          country.Continent.Code,
+			Country:                country.Country.Names["en"],
+			CountryCode:            country.Country.IsoCode,
+			IsAnonymousProxy:       country.Traits.IsAnonymousProxy,
+			IsSatelliteProvider:    country.Traits.IsSatelliteProvider,
+			RegisteredCountry:      country.RegisteredCountry.Names["en"],
+			RegisteredCountryCode:  country.RegisteredCountry.IsoCode,
+			RepresentedCountry:     country.RepresentedCountry.Names["en"],
+			RepresentedCountryCode: country.RepresentedCountry.IsoCode,
+			RepresentedCountryType: country.RepresentedCountry.Type,
+		}
+	} else {
+		return nil, fmt.Errorf("failed to load country data for %s", ip)
+	}
+
+	return x, nil
+}
+
 // Lookup performs a geo ip lookup for ipAddr in the maxmind geoip database
 func (g *GeoIP) Lookup(ipAddr string) error {
 	g.mutex.Lock()
+	defer g.mutex.Unlock()
 	g.IP = net.ParseIP(ipAddr)
-	g.mutex.Unlock()
 
 	if g.IP == nil {
 		return fmt.Errorf("%s is not a valid IP address", ipAddr)
@@ -229,7 +324,6 @@ func (g *GeoIP) Lookup(ipAddr string) error {
 	//
 	anon, err := g.db.AnonymousIP(g.IP)
 	if err == nil {
-		g.mutex.Lock()
 		g.Anonymous = Anonymous{
 			IsAnonymous:       anon.IsAnonymous,
 			IsAnonymousVPN:    anon.IsAnonymousVPN,
@@ -237,7 +331,6 @@ func (g *GeoIP) Lookup(ipAddr string) error {
 			IsPublicProxy:     anon.IsPublicProxy,
 			IsTorExitNode:     anon.IsTorExitNode,
 		}
-		g.mutex.Unlock()
 	}
 
 	// CITY
@@ -249,7 +342,6 @@ func (g *GeoIP) Lookup(ipAddr string) error {
 			subdivisions[i] = sd.Names["en"]
 		}
 
-		g.mutex.Lock()
 		g.City = City{
 			AccuracyRadius:         city.Location.AccuracyRadius,
 			Continent:              city.Continent.Names["en"],
@@ -271,14 +363,12 @@ func (g *GeoIP) Lookup(ipAddr string) error {
 			Subdivisions:           subdivisions,
 			Timezone:               city.Location.TimeZone,
 		}
-		g.mutex.Unlock()
 	}
 
 	// COUNTRY
 	//
 	country, err := g.db.Country(g.IP)
 	if err == nil {
-		g.mutex.Lock()
 		g.Country = Country{
 			Continent:              country.Continent.Names["en"],
 			ContinentCode:          country.Continent.Code,
@@ -292,7 +382,6 @@ func (g *GeoIP) Lookup(ipAddr string) error {
 			RepresentedCountryCode: country.RepresentedCountry.IsoCode,
 			RepresentedCountryType: country.RepresentedCountry.Type,
 		}
-		g.mutex.Unlock()
 	}
 
 	return nil
