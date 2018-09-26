@@ -19,8 +19,10 @@ import (
 )
 
 const (
-	dbURL    = "http://geolite.maxmind.com/download/geoip/database/GeoLite2-City.tar.gz"
-	dbMd5URL = "http://geolite.maxmind.com/download/geoip/database/GeoLite2-City.tar.gz.md5"
+	dbURL    = "https://files.phlip.it/GeoLite2-City.tar.gz"
+	dbMd5URL = "https://files.phlip.it/GeoLite2-City.tar.gz.md5"
+	//bURL    = "http://geolite.maxmind.com/download/geoip/database/GeoLite2-City.tar.gz"
+	//dbMd5URL = "http://geolite.maxmind.com/download/geoip/database/GeoLite2-City.tar.gz.md5"
 )
 
 // Anonymous contains information about whether an IP address is anonymous
