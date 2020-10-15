@@ -19,10 +19,8 @@ import (
 )
 
 const (
-	dbURL    = "https://files.phlip.it/GeoLite2-City.tar.gz"
-	dbMd5URL = "https://files.phlip.it/GeoLite2-City.tar.gz.md5"
-	//bURL    = "http://geolite.maxmind.com/download/geoip/database/GeoLite2-City.tar.gz"
-	//dbMd5URL = "http://geolite.maxmind.com/download/geoip/database/GeoLite2-City.tar.gz.md5"
+	dbFile    = "GeoLite2-City.tar.gz"
+	dbMd5File = "GeoLite2-City.tar.gz.md5"
 )
 
 // Anonymous contains information about whether an IP address is anonymous
@@ -105,13 +103,13 @@ type GeoIP struct {
 }
 
 // NewGeoIP creates a new GeoIP data structure
-func NewGeoIP() (*GeoIP, error) {
+func NewGeoIP(baseURL string) (*GeoIP, error) {
 	g := GeoIP{
 		mutex:   sync.RWMutex{},
 		ipMutex: sync.RWMutex{},
 	}
 
-	err := g.Load()
+	err := g.Load(baseURL)
 	if err != nil {
 		return nil, err
 	}
@@ -128,9 +126,10 @@ func NewGeoIPNoLoad() (*GeoIP, error) {
 }
 
 // Load loads the GeoIP City Database from Maxmind
-func (g *GeoIP) Load() error {
+func (g *GeoIP) Load(baseURL string) error {
 
 	// Get MD5 sum for tar.gz file
+	dbMd5URL := baseURL + "/" + dbMd5File
 	resp, err := http.Get(dbMd5URL)
 	if err != nil {
 		return err
@@ -143,6 +142,7 @@ func (g *GeoIP) Load() error {
 	resp.Body.Close()
 
 	// Load the tar.gz file
+	dbURL := baseURL + "/" + dbFile
 	resp, err = http.Get(dbURL)
 	if err != nil {
 		return err
